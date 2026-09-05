@@ -6,9 +6,13 @@ changes) — contrasted with a correct lift-and-carry where the bottom edge
 rises well clear of the floor.
 
 Per-track baseline state machine: while a person stays near the carton, we
-track a "baseline" bottom-edge height; if the carton is lifted clear of that
-baseline, it's a normal carry and the baseline resets. If it stays at
-baseline height while moving sideways for long enough, that's a drag.
+track the bottom-edge height from when handling started. If it's ever
+lifted clear of that height, the whole contact episode is disqualified as
+a normal carry — even after it plateaus at the new (lifted) height, since
+that's a legitimate "walk while holding it steady" motion, not a drag.
+Only an episode where the height never leaves the starting band, while
+moving sideways for long enough, counts as a drag. A disqualified episode
+can only become eligible again once contact fully breaks and restarts.
 """
 
 from __future__ import annotations
@@ -55,16 +59,21 @@ class DraggedDetector(BehaviourDetector):
             st = self._state.get(obj.track_id)
 
             if not handlers:
-                self._state[obj.track_id] = {"baseline_y2": obj.y2, "baseline_time": timestamp, "reported": False}
+                self._state[obj.track_id] = {
+                    "baseline_y2": obj.y2, "baseline_time": timestamp, "reported": False, "disqualified": False,
+                }
                 continue
 
             if st is None:
-                self._state[obj.track_id] = {"baseline_y2": obj.y2, "baseline_time": timestamp, "reported": False}
+                self._state[obj.track_id] = {
+                    "baseline_y2": obj.y2, "baseline_time": timestamp, "reported": False, "disqualified": False,
+                }
                 continue
 
             lifted = abs(obj.y2 - st["baseline_y2"]) >= MAX_LIFT_PX
             if lifted:
-                self._state[obj.track_id] = {"baseline_y2": obj.y2, "baseline_time": timestamp, "reported": False}
+                st["disqualified"] = True  # a real lift happened during this contact episode — never a drag,
+            if st["disqualified"]:         # even once the height plateaus again at the new, lifted height
                 continue
 
             elapsed = (timestamp - st["baseline_time"]).total_seconds()

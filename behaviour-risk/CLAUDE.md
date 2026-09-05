@@ -15,10 +15,13 @@ asks for: Object Detection + Tracking + Behaviour Recognition + Risk
 Classification working together, not just object detection alone.
 
 ## What you own (produce)
-- The rule-based state machine covering all 10 target behaviours: dropped,
-  dragged, rough_handling, incorrect_stacking, unstable_stacking,
-  outside_designated_area, no_required_equipment, pallet_incorrect_position,
-  pushed_or_thrown, unsafe_loading_sequence.
+- The rule-based state machine covering all 11 target behaviours: dropped,
+  dragged, rough_handling, stepping_on_product, incorrect_stacking,
+  unstable_stacking, outside_designated_area, no_required_equipment,
+  pallet_incorrect_position, pushed_or_thrown, unsafe_loading_sequence.
+  (`stepping_on_product` added 2026-09-06 — the doc's "stepping or standing
+  on cartons" behaviour had no dedicated enum slot before; see the root
+  CLAUDE.md's changelog note on the enum.)
 - The risk scoring formula (behaviour type, product involved, drop height,
   duration, stacking configuration, repeat frequency, location), mapped to
   Low/Medium/High/Critical.

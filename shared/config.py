@@ -33,6 +33,7 @@ BEHAVIOUR_TYPES = [
     "dropped",
     "dragged",
     "rough_handling",
+    "stepping_on_product",
     "incorrect_stacking",
     "unstable_stacking",
     "outside_designated_area",

@@ -29,10 +29,36 @@ def _run_engine():
     return events
 
 
-def test_all_four_scenarios_produce_events():
+ALL_BEHAVIOUR_TYPES = {
+    "dropped",
+    "dragged",
+    "rough_handling",
+    "stepping_on_product",
+    "incorrect_stacking",
+    "unstable_stacking",
+    "outside_designated_area",
+    "no_required_equipment",
+    "pallet_incorrect_position",
+    "pushed_or_thrown",
+    "unsafe_loading_sequence",
+}
+
+
+def test_all_eleven_scenarios_produce_events():
     events = _run_engine()
     types = {e.behaviour_type for e in events}
-    assert {"dropped", "dragged", "rough_handling", "incorrect_stacking"} <= types
+    assert ALL_BEHAVIOUR_TYPES <= types
+
+
+def test_no_unexpected_extra_events():
+    """Each scripted scenario should produce exactly one event of its own
+    type — catches cross-triggering between rules (e.g. a genuine lift
+    also reading as a drag, or a drop also reading as a jolt)."""
+    events = _run_engine()
+    counts: dict = {}
+    for e in events:
+        counts[e.behaviour_type] = counts.get(e.behaviour_type, 0) + 1
+    assert counts == {behaviour_type: 1 for behaviour_type in ALL_BEHAVIOUR_TYPES}
 
 
 def test_events_match_shared_schema():

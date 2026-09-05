@@ -16,7 +16,7 @@ from typing import Deque, Dict, List, Optional
 
 from .models import DetectedObject
 
-DEFAULT_HISTORY_LEN = 30  # ~1s at 30fps — enough for velocity/duration checks, bounded memory
+DEFAULT_HISTORY_LEN = 60  # ~2s at 30fps — the longest lookback any detector uses is no_required_equipment's 45-frame carry window
 
 
 @dataclass

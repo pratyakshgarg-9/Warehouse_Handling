@@ -1,12 +1,8 @@
 """
-"Incorrect / unstable stacking" — behaviour #4: a carton is resting on top
-of another with an unsupported overhang past the base carton's footprint,
-held long enough to be a real stacking choice rather than a person still
-mid-placement.
-
-See unstable_stacking.py for the complementary geometric failure mode
-(a stack too tall/narrow for its base, prone to toppling even without
-overhang) — the shared enum has separate slots for both.
+"Unstable stacking" — the complementary failure mode to incorrect_stacking:
+a stack that's tall and narrow relative to its base footprint is prone to
+toppling even when each carton is fully supported (no overhang). Flagged
+by height-to-base-width ratio rather than overhang.
 """
 
 from __future__ import annotations
@@ -15,18 +11,18 @@ from datetime import datetime
 from typing import List, Set, Tuple
 
 from ..constants import PRODUCT_CLASSES
-from ..geometry import is_resting_on, overhang_ratio
+from ..geometry import is_resting_on
 from ..models import DetectedObject, RawDetection
 from ..pair_debounce import PairDebouncer
 from ..track_store import TrackStore
 from .base import BehaviourDetector
 
-OVERHANG_RATIO_THRESHOLD = 0.3   # fraction of the base carton's width allowed to overhang before flagging
-STABLE_MIN_S = 1.0               # must hold this configuration this long before flagging (ignores mid-placement motion)
+HEIGHT_TO_WIDTH_RATIO_THRESHOLD = 1.5  # a stack taller than 1.5x its base footprint's width is toppling-prone
+STABLE_MIN_S = 1.0
 
 
-class IncorrectStackingDetector(BehaviourDetector):
-    behaviour_type = "incorrect_stacking"
+class UnstableStackingDetector(BehaviourDetector):
+    behaviour_type = "unstable_stacking"
 
     def __init__(self) -> None:
         self._debounce = PairDebouncer(STABLE_MIN_S)
@@ -48,8 +44,11 @@ class IncorrectStackingDetector(BehaviourDetector):
                     continue
                 if not is_resting_on(top, base):
                     continue
-                ratio = overhang_ratio(top, base)
-                if ratio <= OVERHANG_RATIO_THRESHOLD:
+                if base.width <= 0:
+                    continue
+                stack_height = base.y2 - top.y1  # base's bottom edge to top's top edge
+                ratio = stack_height / base.width
+                if ratio <= HEIGHT_TO_WIDTH_RATIO_THRESHOLD:
                     continue
 
                 key = (top.track_id, base.track_id)
@@ -59,7 +58,7 @@ class IncorrectStackingDetector(BehaviourDetector):
                         object_ids=[top.track_id, base.track_id],
                         frame_id=frame_id,
                         timestamp=timestamp,
-                        details={"overhang_ratio": ratio},
+                        details={"height_to_width_ratio": ratio},
                     ))
 
         self._debounce.sweep(active)

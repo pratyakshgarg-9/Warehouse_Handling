@@ -4,25 +4,35 @@ Turns Member 1's per-frame detections into named behaviours and
 risk-classified events. See `CLAUDE.md` in this folder for role/timeline
 context, and the repo root `CLAUDE.md` for the shared schema contract.
 
-## Status (2026-09-05, Sep 5 milestone)
+## Status (2026-09-06)
 
 Runs standalone end-to-end against synthetic sample data (Member 1 hasn't
 published a real stream yet — `/cv-pipeline` is still just a
-requirements.txt). 4 of 10 behaviours implemented and tested, matching the
-roadmap's Sep 5 target exactly:
+requirements.txt). All 11 behaviours implemented and tested — ahead of the
+roadmap's Sep 7 "all 10 behaviours" target (11, not 10, because
+`stepping_on_product` was split out from `rough_handling` — see the enum
+note below):
 
 | Behaviour | Status |
 | --- | --- |
 | `dropped` | done |
 | `dragged` | done |
-| `rough_handling` (covers "stepping on cartons" — see note below) | done |
-| `incorrect_stacking` | done |
-| `unstable_stacking`, `outside_designated_area`, `no_required_equipment`, `pallet_incorrect_position`, `pushed_or_thrown`, `unsafe_loading_sequence` | not started — Sep 7 target per the roadmap |
+| `rough_handling` (sudden jolt while being actively handled) | done |
+| `stepping_on_product` (a person standing/stepping on a carton) | done |
+| `incorrect_stacking` (unsupported overhang) | done |
+| `unstable_stacking` (tall/narrow stack, toppling risk) | done |
+| `outside_designated_area` | done |
+| `no_required_equipment` (long manual carry, no trolley) | done |
+| `pallet_incorrect_position` (product overhangs its pallet) | done |
+| `pushed_or_thrown` (high speed, nobody in contact) | done |
+| `unsafe_loading_sequence` (several products moving at once) | done |
 
 Risk scoring (v1 formula) and explanation strings are implemented for all
-four working behaviours. Thresholds throughout are first-pass guesses, not
-tuned against real footage — expect to retune once Member 1's live stream
-and real sample videos are available (Sep 6-9 per the roadmap).
+eleven. Thresholds throughout are first-pass guesses, not tuned against
+real footage — expect to retune once Member 1's live stream and real
+sample videos are available (Sep 6-9 per the roadmap). Remaining work is
+tuning against false positives/negatives and wiring to Member 1's real
+stream once it's published, not new behaviours.
 
 ## Layout
 
@@ -30,9 +40,10 @@ and real sample videos are available (Sep 6-9 per the roadmap).
 behaviour_risk_engine/
   models.py           DetectedObject / RawDetection / Event — mirrors the shared schema
   constants.py        class-name sets (person/carton/pallet/trolley)
-  geometry.py         bbox helpers (overlap, resting-on, overhang)
+  geometry.py         bbox helpers (overlap, resting-on, overhang, bottom_strip)
   track_store.py       rolling per-track history (velocity, displacement, duration)
-  behaviours/          one BehaviourDetector per behaviour_type
+  pair_debounce.py     shared "hold for N seconds, fire once" helper used by several detectors
+  behaviours/          one BehaviourDetector per behaviour_type (11 files)
   risk_scoring.py      the spec's risk_score formula + Low/Medium/High/Critical buckets
   explanations.py      bad-practice -> good-practice text per behaviour_type
   event_sink.py        where finished events go (see "Integration" below)
@@ -68,13 +79,18 @@ pytest tests/           # run from within behaviour-risk/
   import (`backend_assistant.db.insert_event`) that will silently no-op
   until that path is real. Update that one import once Member 3 publishes
   the actual function — nothing in `engine.py` or the detectors changes.
-- **Person keypoints**: the "stepping on product" rule approximates a
+- **Person keypoints**: the `stepping_on_product` rule approximates a
   person's feet as the bottom 15% of their bbox (`geometry.bottom_strip`)
   rather than real pose keypoints, since the per-frame schema doesn't
   document keypoint index/ordering (e.g. MediaPipe's landmark order) yet.
   Worth revisiting with Member 1 once that's documented.
-- **"Stepping on cartons" enum gap**: the challenge doc lists this as its
-  own bad practice, but the shared `behaviour_type` enum in the root
-  CLAUDE.md has no dedicated slot for it — it's folded into
-  `rough_handling` here. If the team wants a dedicated category, that's an
-  enum change and needs to go through `/shared` first.
+- **Designated-area / pallet-zone coordinates**: `outside_designated_area.py`'s
+  `DESIGNATED_AREA_BBOX` is a placeholder pixel rectangle with no camera
+  calibration behind it yet — needs real values once Member 1's camera
+  setup/framing is known.
+- **Enum change (2026-09-06)**: `stepping_on_product` was added to the
+  shared `behaviour_type` enum (root CLAUDE.md and `shared/config.py`) —
+  the doc's "stepping or standing on cartons" behaviour had no dedicated
+  slot before (see that file's changelog note). Flagging this since Member
+  3/4 build against that enum; nothing was built against the old list yet,
+  so this was a safe time to fix it.

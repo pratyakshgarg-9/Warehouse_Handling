@@ -25,6 +25,7 @@ BASE_SEVERITY: Dict[str, float] = {
     "dropped": 0.35,
     "dragged": 0.20,
     "rough_handling": 0.30,
+    "stepping_on_product": 0.30,
     "incorrect_stacking": 0.30,
     "unstable_stacking": 0.30,
     "outside_designated_area": 0.15,
@@ -64,13 +65,30 @@ def _impact_estimate(behaviour_type: str, details: dict) -> float:
         ratio = details.get("overhang_ratio", 0.0)
         return min(ratio / 1.0, 1.0) * 0.4
     if behaviour_type == "rough_handling":
-        if details.get("cause") == "sudden_impact":
-            speed = details.get("peak_speed_px_s", 0.0)
-            return min(speed / 1000.0, 1.0) * 0.4
-        return 0.15  # stepping-on-product: consistent, moderate impact estimate
+        speed = details.get("peak_speed_px_s", 0.0)
+        return min(speed / 1000.0, 1.0) * 0.4
+    if behaviour_type == "stepping_on_product":
+        return 0.15  # consistent, moderate impact estimate for applied body weight
     if behaviour_type == "dragged":
         distance = details.get("distance_px", 0.0)
         return min(distance / 300.0, 1.0) * 0.4
+    if behaviour_type == "unstable_stacking":
+        ratio = details.get("height_to_width_ratio", 0.0)
+        return min(ratio / 3.0, 1.0) * 0.4
+    if behaviour_type == "outside_designated_area":
+        return 0.1  # placement violation; no distance-from-zone signal yet to grade severity further
+    if behaviour_type == "no_required_equipment":
+        distance = details.get("distance_px", 0.0)
+        return min(distance / 400.0, 1.0) * 0.4
+    if behaviour_type == "pallet_incorrect_position":
+        ratio = details.get("overhang_ratio", 0.0)
+        return min(ratio / 1.0, 1.0) * 0.4
+    if behaviour_type == "pushed_or_thrown":
+        speed = details.get("peak_speed_px_s", 0.0)
+        return min(speed / 800.0, 1.0) * 0.4
+    if behaviour_type == "unsafe_loading_sequence":
+        count = details.get("concurrent_count", 0)
+        return min(count / 6.0, 1.0) * 0.4
     return 0.1
 
 

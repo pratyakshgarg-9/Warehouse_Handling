@@ -34,10 +34,17 @@ only the owning member edits inside them unless they explicitly ask for help.
 
 ### Behaviour type enum (Member 2 produces, everyone else reads)
 ```
-dropped | dragged | rough_handling | incorrect_stacking | unstable_stacking |
-outside_designated_area | no_required_equipment | pallet_incorrect_position |
-pushed_or_thrown | unsafe_loading_sequence
+dropped | dragged | rough_handling | stepping_on_product | incorrect_stacking |
+unstable_stacking | outside_designated_area | no_required_equipment |
+pallet_incorrect_position | pushed_or_thrown | unsafe_loading_sequence
 ```
+Updated 2026-09-06 (Member 2): added `stepping_on_product` — the doc's
+"stepping or standing on cartons" behaviour had no dedicated slot (the
+original 10 entries covered only 9 of the doc's 10 required behaviours,
+since stacking was split into two). Nothing downstream was built against
+the old list yet, so this was a safe time to fix it. `shared/config.py`'s
+`BEHAVIOUR_TYPES` has been updated to match — re-import from there rather
+than hardcoding the list elsewhere.
 
 ### Risk level enum
 ```
@@ -102,7 +109,7 @@ storage elsewhere.
 
 ## Current status (update as the project moves — each member updates only their own line)
 - [ ] `/cv-pipeline` producing stable per-frame output (Member 1)
-- [x] `/behaviour-risk` producing events for 4 behaviours (dropped, dragged, rough_handling, incorrect_stacking) — tested standalone against synthetic sample data; remaining 6 + wiring to Member 1's live stream pending Sep 6-7 (Member 2)
+- [x] `/behaviour-risk` producing events for all 11 behaviours (see the enum above) — tested standalone against synthetic sample data; wiring to Member 1's live stream + tuning thresholds against real footage still pending (Member 2)
 - [ ] `/backend-assistant` event store + assistant answering doc's example queries (Member 3)
 - [ ] `/dashboard` reading real events end-to-end (Member 4)
 

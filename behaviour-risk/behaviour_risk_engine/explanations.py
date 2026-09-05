@@ -105,6 +105,30 @@ def _unsafe_loading_sequence(details: dict) -> str:
     )
 
 
+def _rolling(details: dict) -> str:
+    return (
+        "Product was rolled along the floor instead of being carried or moved with proper equipment. "
+        "Potential risk: surface damage or structural stress from repeated impacts while rolling. "
+        "Correct practice: carry or move products using the appropriate material-handling equipment; do not roll products unless specifically designed for it."
+    )
+
+
+def _wrong_orientation(details: dict) -> str:
+    return (
+        "Product was kept lying on its side instead of its intended upright orientation. "
+        "Potential risk: internal damage from being handled against its designed load direction. "
+        "Correct practice: follow the specified product orientation and handling labels/arrows throughout storage, movement and loading."
+    )
+
+
+def _strap_misuse(details: dict) -> str:
+    return (
+        "Product was lifted or pulled using its packaging strap rather than a proper handling point. "
+        "Potential risk: the strap tearing and the product being dropped, or damage at the strap's attachment point. "
+        "Correct practice: handle the carton using proper lifting points or equipment — packaging straps are not lifting handles unless specifically designed for it."
+    )
+
+
 def _fallback(details: dict) -> str:
     return (
         "An irregular handling pattern was detected for this behaviour type. "
@@ -125,6 +149,9 @@ _TEMPLATES: Dict[str, Callable[[dict], str]] = {
     "pallet_incorrect_position": _pallet_incorrect_position,
     "pushed_or_thrown": _pushed_or_thrown,
     "unsafe_loading_sequence": _unsafe_loading_sequence,
+    "rolling": _rolling,
+    "wrong_orientation": _wrong_orientation,
+    "strap_misuse": _strap_misuse,
 }
 
 

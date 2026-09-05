@@ -8,10 +8,10 @@ context, and the repo root `CLAUDE.md` for the shared schema contract.
 
 Runs standalone end-to-end against synthetic sample data (Member 1 hasn't
 published a real stream yet — `/cv-pipeline` is still just a
-requirements.txt). All 11 behaviours implemented and tested — ahead of the
-roadmap's Sep 7 "all 10 behaviours" target (11, not 10, because
-`stepping_on_product` was split out from `rough_handling` — see the enum
-note below):
+requirements.txt). 14 behaviours implemented and tested — beyond the
+roadmap's Sep 7 "all 10 behaviours" target, because the real input videos
+(see below) turned out to need 4 more than the doc's generic behaviour
+list implied:
 
 | Behaviour | Status |
 | --- | --- |
@@ -26,24 +26,41 @@ note below):
 | `pallet_incorrect_position` (product overhangs its pallet) | done |
 | `pushed_or_thrown` (high speed, nobody in contact) | done |
 | `unsafe_loading_sequence` (several products moving at once) | done |
+| `rolling` (rolled instead of carried — bbox aspect-ratio wobble) | done |
+| `wrong_orientation` (upright product kept lying on its side) | done |
+| `strap_misuse` (lifted/pulled by its packaging strap) | done |
 
 Risk scoring (v1 formula) and explanation strings are implemented for all
-eleven. Thresholds throughout are first-pass guesses, not tuned against
+fourteen. Thresholds throughout are first-pass guesses, not tuned against
 real footage — expect to retune once Member 1's live stream and real
 sample videos are available (Sep 6-9 per the roadmap). Remaining work is
 tuning against false positives/negatives and wiring to Member 1's real
 stream once it's published, not new behaviours.
+
+**Checked the actual input videos (2026-09-06)**: the challenge doc (`AI
+Video Intelligence for Warehouse Handling.docx`) links a Google Drive
+folder of the real demo footage — 7 clips: "Dock level, dragging
+cupboard", "KD packets dragged, heavy box kept on other packets", "Rolling
+and dragging on wet floor", "Rolling and dropping carton", "Stepping on
+cartons, vertical product kept horizontally, heavy product kept on top",
+"Throwing Mattresses", "Throwing seating cartons, using strap to hold".
+Cross-checking those filenames against the first 11 behaviours surfaced
+`rolling`, `wrong_orientation`, and `strap_misuse` as real gaps — now
+fixed. It also showed the product mix is mattresses/cupboards/packets,
+not just cartons, hence the `PRODUCT_CLASSES` broadening in
+`constants.py` (see that file's note) — **this affects Member 1's
+labeling plan**, which only covered person/carton/pallet/trolley.
 
 ## Layout
 
 ```
 behaviour_risk_engine/
   models.py           DetectedObject / RawDetection / Event — mirrors the shared schema
-  constants.py        class-name sets (person/carton/pallet/trolley)
+  constants.py        class-name sets (person/carton/mattress/cupboard/pallet/trolley/strap)
   geometry.py         bbox helpers (overlap, resting-on, overhang, bottom_strip)
   track_store.py       rolling per-track history (velocity, displacement, duration)
   pair_debounce.py     shared "hold for N seconds, fire once" helper used by several detectors
-  behaviours/          one BehaviourDetector per behaviour_type (11 files)
+  behaviours/          one BehaviourDetector per behaviour_type (14 files)
   risk_scoring.py      the spec's risk_score formula + Low/Medium/High/Critical buckets
   explanations.py      bad-practice -> good-practice text per behaviour_type
   event_sink.py        where finished events go (see "Integration" below)
@@ -88,9 +105,18 @@ pytest tests/           # run from within behaviour-risk/
   `DESIGNATED_AREA_BBOX` is a placeholder pixel rectangle with no camera
   calibration behind it yet — needs real values once Member 1's camera
   setup/framing is known.
-- **Enum change (2026-09-06)**: `stepping_on_product` was added to the
-  shared `behaviour_type` enum (root CLAUDE.md and `shared/config.py`) —
-  the doc's "stepping or standing on cartons" behaviour had no dedicated
-  slot before (see that file's changelog note). Flagging this since Member
-  3/4 build against that enum; nothing was built against the old list yet,
-  so this was a safe time to fix it.
+- **Enum changes (2026-09-06)**: `stepping_on_product`, then `rolling` /
+  `wrong_orientation` / `strap_misuse`, were added to the shared
+  `behaviour_type` enum (root CLAUDE.md and `shared/config.py`) — see that
+  file's changelog notes. Flagging this since Member 3/4 build against
+  that enum; nothing was built against the old list yet, so this was a
+  safe time to fix it.
+- **Product class taxonomy**: `constants.PRODUCT_CLASSES` was broadened
+  from just `{"carton"}` to `{"carton", "mattress", "cupboard", "packet"}`
+  after checking the real input videos, and `STRAP_CLASSES = {"strap"}`
+  was added for `strap_misuse.py`. These are placeholder guesses at
+  Member 1's eventual label names — their roadmap only planned
+  person/carton/pallet/trolley, which doesn't cover what's actually
+  filmed. `strap_misuse` in particular will never fire on real data until
+  Member 1's detector recognizes a strap class. Worth confirming actual
+  class names with Member 1 once their labeling is done.

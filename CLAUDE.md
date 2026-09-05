@@ -36,7 +36,8 @@ only the owning member edits inside them unless they explicitly ask for help.
 ```
 dropped | dragged | rough_handling | stepping_on_product | incorrect_stacking |
 unstable_stacking | outside_designated_area | no_required_equipment |
-pallet_incorrect_position | pushed_or_thrown | unsafe_loading_sequence
+pallet_incorrect_position | pushed_or_thrown | unsafe_loading_sequence |
+rolling | wrong_orientation | strap_misuse
 ```
 Updated 2026-09-06 (Member 2): added `stepping_on_product` — the doc's
 "stepping or standing on cartons" behaviour had no dedicated slot (the
@@ -45,6 +46,20 @@ since stacking was split into two). Nothing downstream was built against
 the old list yet, so this was a safe time to fix it. `shared/config.py`'s
 `BEHAVIOUR_TYPES` has been updated to match — re-import from there rather
 than hardcoding the list elsewhere.
+
+Updated 2026-09-06 (Member 2), second pass: added `rolling`,
+`wrong_orientation`, and `strap_misuse` after checking the actual input
+videos (Google Drive folder linked from the challenge doc). The real demo
+footage includes "Rolling and dragging on wet floor", "Rolling and
+dropping carton", "...vertical product kept horizontally...", and
+"...using strap to hold" — none of which any prior behaviour covered. It
+also shows mattresses, cupboards, and "KD packets" being handled, not just
+cartons — `behaviour_risk_engine/constants.py`'s `PRODUCT_CLASSES` was
+broadened to match. **This affects Member 1's labeling plan**: the
+roadmap only planned to label person/carton/pallet/trolley in Roboflow,
+which doesn't cover mattress/cupboard/packet/strap — worth confirming
+real class names with Member 1 once their detector is running on the
+actual footage.
 
 ### Risk level enum
 ```
@@ -109,7 +124,7 @@ storage elsewhere.
 
 ## Current status (update as the project moves — each member updates only their own line)
 - [ ] `/cv-pipeline` producing stable per-frame output (Member 1)
-- [x] `/behaviour-risk` producing events for all 11 behaviours (see the enum above) — tested standalone against synthetic sample data; wiring to Member 1's live stream + tuning thresholds against real footage still pending (Member 2)
+- [x] `/behaviour-risk` producing events for all 14 behaviours (see the enum above) — tested standalone against synthetic sample data; wiring to Member 1's live stream + tuning thresholds against real footage still pending (Member 2)
 - [ ] `/backend-assistant` event store + assistant answering doc's example queries (Member 3)
 - [ ] `/dashboard` reading real events end-to-end (Member 4)
 

@@ -41,10 +41,13 @@ ALL_BEHAVIOUR_TYPES = {
     "pallet_incorrect_position",
     "pushed_or_thrown",
     "unsafe_loading_sequence",
+    "rolling",
+    "wrong_orientation",
+    "strap_misuse",
 }
 
 
-def test_all_eleven_scenarios_produce_events():
+def test_all_scenarios_produce_events():
     events = _run_engine()
     types = {e.behaviour_type for e in events}
     assert ALL_BEHAVIOUR_TYPES <= types

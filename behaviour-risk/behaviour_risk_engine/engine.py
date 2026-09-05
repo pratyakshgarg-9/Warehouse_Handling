@@ -23,10 +23,13 @@ from .behaviours.no_required_equipment import NoRequiredEquipmentDetector
 from .behaviours.outside_designated_area import OutsideDesignatedAreaDetector
 from .behaviours.pallet_incorrect_position import PalletIncorrectPositionDetector
 from .behaviours.pushed_or_thrown import PushedOrThrownDetector
+from .behaviours.rolling import RollingDetector
 from .behaviours.rough_handling import RoughHandlingDetector
 from .behaviours.stepping_on_product import SteppingOnProductDetector
+from .behaviours.strap_misuse import StrapMisuseDetector
 from .behaviours.unsafe_loading_sequence import UnsafeLoadingSequenceDetector
 from .behaviours.unstable_stacking import UnstableStackingDetector
+from .behaviours.wrong_orientation import WrongOrientationDetector
 from .event_sink import default_event_sink
 from .models import DetectedObject, Event, RawDetection
 from .track_store import TrackStore
@@ -71,6 +74,9 @@ class BehaviourEngine:
             PalletIncorrectPositionDetector(),
             PushedOrThrownDetector(),
             UnsafeLoadingSequenceDetector(),
+            RollingDetector(),
+            WrongOrientationDetector(),
+            StrapMisuseDetector(),
         ]
         self.sink = event_sink or default_event_sink
         self._event_counter = 0

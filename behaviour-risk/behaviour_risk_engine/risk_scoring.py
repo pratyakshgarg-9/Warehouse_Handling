@@ -33,6 +33,9 @@ BASE_SEVERITY: Dict[str, float] = {
     "pallet_incorrect_position": 0.20,
     "pushed_or_thrown": 0.35,
     "unsafe_loading_sequence": 0.25,
+    "rolling": 0.25,
+    "wrong_orientation": 0.20,
+    "strap_misuse": 0.20,
 }
 DEFAULT_SEVERITY = 0.20
 
@@ -89,6 +92,14 @@ def _impact_estimate(behaviour_type: str, details: dict) -> float:
     if behaviour_type == "unsafe_loading_sequence":
         count = details.get("concurrent_count", 0)
         return min(count / 6.0, 1.0) * 0.4
+    if behaviour_type == "rolling":
+        wobble = details.get("aspect_ratio_wobble", 0.0)
+        return min(wobble / 1.0, 1.0) * 0.4
+    if behaviour_type == "wrong_orientation":
+        ratio = details.get("width_to_height_ratio", 0.0)
+        return min(max(ratio - 1.0, 0.0) / 2.0, 1.0) * 0.4
+    if behaviour_type == "strap_misuse":
+        return 0.15  # consistent moderate estimate; no strength/force signal available
     return 0.1
 
 

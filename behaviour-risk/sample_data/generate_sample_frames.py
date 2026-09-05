@@ -10,7 +10,7 @@ a single continuous timeline (as if they were separate moments in one
 shift recording): dropped, dragged, rough_handling, stepping_on_product,
 incorrect_stacking, unstable_stacking, outside_designated_area,
 no_required_equipment, pallet_incorrect_position, pushed_or_thrown,
-unsafe_loading_sequence.
+unsafe_loading_sequence, rolling, wrong_orientation, strap_misuse.
 """
 
 from __future__ import annotations
@@ -259,6 +259,57 @@ def _unsafe_loading_sequence_scenario(frame_id: int, t: datetime) -> tuple:
     return frames, frame_id, t
 
 
+def _rolling_scenario(frame_id: int, t: datetime) -> tuple:
+    """Carton 117 is rolled along the floor — its bbox aspect ratio wobbles
+    (tips edge-over-edge) as it travels, unlike dragged's steady slide.
+    No person track is included, so dragged/no_required_equipment (which
+    both require person contact) can't cross-trigger here."""
+    frames = []
+    x = 100.0
+    y_center = 480.0
+    shapes = [(60.0, 40.0), (40.0, 60.0)] * 15  # enough frames for both the distance and duration thresholds to be met
+    for w, h in shapes:
+        bbox = [x, y_center - h / 2, x + w, y_center + h / 2]
+        frames.append(_frame(frame_id, t, [_obj(117, "carton", bbox)]))
+        frame_id += 1
+        t += FRAME_DT
+        x += 8.0
+    return frames, frame_id, t
+
+
+def _wrong_orientation_scenario(frame_id: int, t: datetime) -> tuple:
+    """Cupboard 118 is kept lying on its side (wide bbox) instead of
+    upright, sustained long enough to be a real placement rather than a
+    momentary tilt while being moved."""
+    frames = []
+    bbox = [500.0, 300.0, 700.0, 360.0]  # width 200, height 60 -> ratio 3.33
+    for _ in range(35):
+        frames.append(_frame(frame_id, t, [_obj(118, "cupboard", bbox)]))
+        frame_id += 1
+        t += FRAME_DT
+    return frames, frame_id, t
+
+
+def _strap_misuse_scenario(frame_id: int, t: datetime) -> tuple:
+    """Carton 119 is being handled by person 205 with a strap 401
+    overlapping it — carried via its packaging strap rather than a proper
+    handling point. Static (no movement), so this doesn't also read as a
+    dragged/no_required_equipment episode, which both need real distance."""
+    frames = []
+    carton_bbox = [600.0, 300.0, 660.0, 360.0]
+    person_bbox = [560.0, 250.0, 610.0, 400.0]
+    strap_bbox = [605.0, 280.0, 655.0, 305.0]
+    for _ in range(20):
+        frames.append(_frame(frame_id, t, [
+            _obj(119, "carton", carton_bbox),
+            _obj(205, "person", person_bbox),
+            _obj(401, "strap", strap_bbox),
+        ]))
+        frame_id += 1
+        t += FRAME_DT
+    return frames, frame_id, t
+
+
 def generate_sample_frames() -> List[Dict]:
     frame_id = 1
     t = START_TIME
@@ -276,6 +327,9 @@ def generate_sample_frames() -> List[Dict]:
         _pallet_incorrect_position_scenario,
         _pushed_or_thrown_scenario,
         _unsafe_loading_sequence_scenario,
+        _rolling_scenario,
+        _wrong_orientation_scenario,
+        _strap_misuse_scenario,
     ):
         frames, frame_id, t = scenario(frame_id, t)
         all_frames.extend(frames)

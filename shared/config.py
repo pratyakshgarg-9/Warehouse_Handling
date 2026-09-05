@@ -41,6 +41,9 @@ BEHAVIOUR_TYPES = [
     "pallet_incorrect_position",
     "pushed_or_thrown",
     "unsafe_loading_sequence",
+    "rolling",
+    "wrong_orientation",
+    "strap_misuse",
 ]
 
 RISK_LEVELS = ["Low", "Medium", "High", "Critical"]

@@ -102,7 +102,7 @@ storage elsewhere.
 
 ## Current status (update as the project moves — each member updates only their own line)
 - [ ] `/cv-pipeline` producing stable per-frame output (Member 1)
-- [ ] `/behaviour-risk` producing events for at least 4 behaviours (Member 2)
+- [x] `/behaviour-risk` producing events for 4 behaviours (dropped, dragged, rough_handling, incorrect_stacking) — tested standalone against synthetic sample data; remaining 6 + wiring to Member 1's live stream pending Sep 6-7 (Member 2)
 - [ ] `/backend-assistant` event store + assistant answering doc's example queries (Member 3)
 - [ ] `/dashboard` reading real events end-to-end (Member 4)
 

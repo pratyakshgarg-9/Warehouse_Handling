@@ -37,3 +37,6 @@ venv/
 # --- Roboflow / dataset exports (large, re-downloadable) ---
 *.zip
 datasets/
+
+# --- behaviour-risk local scratch output (standalone-run fallback log, not the real event store) ---
+behaviour-risk/output/

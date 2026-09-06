@@ -65,9 +65,11 @@ behaviour_risk_engine/
   explanations.py      bad-practice -> good-practice text per behaviour_type
   event_sink.py        where finished events go (see "Integration" below)
   engine.py            BehaviourEngine — wires everything above together
+  cv_pipeline_adapter.py  translates Member 1's REAL output format into what engine.py expects
 
 sample_data/generate_sample_frames.py   synthetic per-frame stream standing in for Member 1's real one
-demo.py                                  run the engine over sample data, print resulting events
+demo.py                                  run the engine over synthetic sample data, print resulting events
+run_on_cv_output.py                      run the engine over Member 1's REAL published output, print resulting events
 tests/test_behaviours.py                 pytest: each behaviour fires, events match schema, no "confirmed damage" language
 ```
 
@@ -75,21 +77,100 @@ tests/test_behaviours.py                 pytest: each behaviour fires, events ma
 
 ```bash
 pip install -r behaviour-risk-requirements.txt
-python demo.py          # prints every event produced from synthetic sample frames
-pytest tests/           # run from within behaviour-risk/
+python demo.py                    # prints every event produced from synthetic sample frames
+python run_on_cv_output.py        # prints every event produced from Member 1's real published output
+pytest tests/                     # run from within behaviour-risk/
 ```
+
+## Wired to Member 1's real output (2026-09-07)
+
+`/cv-pipeline` published a real pipeline + output (`models/best.pt`,
+`pipeline/cv_pipeline.py`, `outputs/*.json`) on 2026-09-06/07. Their actual
+per-frame JSON diverges from the schema documented in the root CLAUDE.md
+(which both this module and `dashboard/data_access.py` were built
+against) — see `cv_pipeline_adapter.py`'s docstring for the full mapping:
+`class_name` not `class`, `timestamp_ms` (int, frame-relative) not
+`timestamp` (ISO string), `pose.landmarks` not `keypoints`, `track_id: -1`
+for untracked detections (dropped, not merged into one fake track), and a
+`MIN_CONFIDENCE` floor for the prototype model's noisier detections.
+
+**First pass — `run_on_cv_output.py` against both real files already in
+`cv-pipeline/outputs/` — 0 events from either, correctly.** Checked why:
+both files are generic pipeline-validation walkthroughs (person + forklift
+moving around a warehouse), not runs of the actual challenge-doc demo
+videos. The only `box`-class track across either file lasts 6 frames with
+~37px of movement — nowhere near any behaviour's threshold, correctly.
+
+Also surfaced: the real trained model (`best.pt`) only detects `person`,
+`box`, and `forklift` (confirmed from the output JSON) — nowhere near the
+doc's full product/equipment vocabulary. Concretely, `pallet_incorrect_position`,
+`strap_misuse`, and `wrong_orientation` **cannot produce events against
+this model** until Member 1 trains on pallet/strap/cupboard/mattress too
+— not a bug in those detectors, a model-vocabulary gap (already called out
+in `cv-pipeline/README.md`'s own limitations section).
+
+**Second pass (2026-09-07) — ran Member 1's actual pipeline on 2 real
+demo clips**: downloaded "Rolling and dragging on wet floor.mp4" (6.7 MB)
+and "Rolling and dropping carton.mp4" (10.1 MB) from the challenge doc's
+Drive folder and ran `cv_pipeline.run_cv()` on both (outputs landed in
+`cv-pipeline/outputs/` per that function's own design — the generated
+annotated MP4s were deleted after inspection, just the `*_cv.json` per-
+frame data was kept). This produced real events for the first time —
+`rough_handling` and `stepping_on_product` fired — but the first run also
+exposed a real robustness bug:
+
+- **Bbox jitter false-positives**: a real detector's box edges wobble a
+  few px frame-to-frame even when nothing is moving. At 30fps that's
+  enough to cross a naive 2-3 frame velocity threshold constantly — one
+  clip produced 41 spurious speed-spikes on a single mostly-stationary
+  track, cascading into **21 events from 6 seconds of video**, 11 of them
+  the same `pushed_or_thrown` false-positive repeating. Fixed in
+  `pushed_or_thrown.py` and `rough_handling.py`'s jerk sub-rule: widened
+  the speed-averaging window (2-3 → 6 frames) and require the elevated
+  speed to hold for 2 consecutive frames, not one instant. That alone
+  collapsed the noise into 3 clean, physically-plausible clusters.
+- **Window-widening's own side effect**: a wider window means a real
+  jolt's velocity reading lingers for a few frames after the fact — long
+  enough to outlast contact ending, which made `pushed_or_thrown` also
+  fire for the exact same jolt `rough_handling` had already correctly
+  captured while contact was active. Fixed with a small cooldown:
+  `pushed_or_thrown` won't evaluate a track's speed until contact has
+  been over for a full window's worth of frames.
+- **After both fixes: 3 events for the wet-floor clip, 4 for the
+  dropping-carton clip** — `rough_handling` and `stepping_on_product`
+  only, no duplicates. Full synthetic test suite (14 scripted scenarios)
+  still passes unchanged.
+- **Still not investigated**: neither clip produced a `rolling` event,
+  despite that being literally the filmed behaviour. The one `carton`-
+  class track in both clips is suspiciously huge (~660×486px, over half
+  the 1280×720 frame) — likely a low-quality prototype-model box rather
+  than a real, tightly-fit product detection, which would also explain
+  why `stepping_on_product` fires just from a person being anywhere near
+  that region. This looks like a detection-quality issue for Member 1
+  (README's own "Improving cardboard box detection" limitation), not
+  something tunable from the behaviour-risk side — worth Member 1 looking
+  at the annotated video for these two clips to confirm what's actually
+  being boxed.
+- **The real remaining next step still needs Member 1**: run the pipeline
+  on the rest of the Drive clips (dock/dragging, throwing, straps,
+  stacking) for broader validation, and ideally retrain with a broader
+  labeled dataset so the 3 dead behaviours above have a chance to fire.
+
+**Flagged to Member 4**: `dashboard/data_access.py`'s `load_detections()`
+is written against the same documented-but-not-real schema (its own
+docstring says so) — it'll hit the identical mismatch once it loads
+Member 1's actual output. Worth reusing this adapter's mapping rather than
+writing a second, possibly-inconsistent translation.
 
 ## Integration points (things that will need to change later)
 
-- **Member 1's real stream**: `sample_data/generate_sample_frames.py` is a
-  stand-in. Once `/cv-pipeline` publishes a real per-frame stream, whatever
-  drives it just needs to call `BehaviourEngine.process_frame(frame_dict)`
-  per frame — nothing inside `behaviour_risk_engine/` needs to change.
-- **Timestamp precision**: the sample generator emits millisecond-precision
-  timestamps (`...T10:00:00.033Z`) because velocity/duration math needs
-  sub-second resolution at 30fps. The root CLAUDE.md's schema example only
-  shows whole seconds — confirm Member 1's real stream has sub-second
-  precision too (flagged, not assumed silently).
+- **Timestamp precision / reference**: `cv_pipeline_adapter.py` converts
+  Member 1's frame-relative `timestamp_ms` into an ISO timestamp using an
+  arbitrary reference time by default — it's NOT real wall-clock time
+  unless a `video_start_utc` is passed in. `dashboard/config.py` already
+  has the identical problem and solves it with a `DASHBOARD_VIDEO_START_UTC`
+  env var — worth the whole team agreeing on one video-start-time
+  convention rather than each module picking its own default.
 - **Member 3's insert function**: not published yet. `event_sink.py`
   currently falls back to a local JSONL log
   (`behaviour-risk/output/events_log.jsonl`, gitignored) and has a guessed

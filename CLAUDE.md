@@ -88,6 +88,17 @@ Low | Medium | High | Critical
   ]
 }
 ```
+**⚠ This example was never real — it's what Member 2 originally assumed
+before Member 1's pipeline existed.** The actual, confirmed schema is now
+published at [`shared/cv_pipeline_schema.md`](shared/cv_pipeline_schema.md)
+— treat that file as the source of truth for this contract, not the JSON
+above. Short version: real frames use `class_name` not `class`,
+`timestamp_ms` (int, frame-relative) not `timestamp` (ISO string),
+`pose: {landmarks: [...]}` not `keypoints`, `track_id: -1` for untracked
+detections, and the trained model only produces `person`/`box`/`forklift`.
+**Member 4**: `dashboard/data_access.py`'s `load_detections()` is written
+against the schema shown above, not the real one — see the shared schema
+doc's "who needs to know this" section.
 
 ### Event schema (Member 2 produces, Member 3 stores, Member 4 reads)
 ```json
@@ -124,7 +135,7 @@ storage elsewhere.
 
 ## Current status (update as the project moves — each member updates only their own line)
 - [ ] `/cv-pipeline` producing stable per-frame output (Member 1)
-- [x] `/behaviour-risk` producing events for all 14 behaviours (see the enum above) — tested standalone against synthetic sample data; wiring to Member 1's live stream + tuning thresholds against real footage still pending (Member 2)
+- [x] `/behaviour-risk` producing events for all 14 behaviours (see the enum above) — tested standalone against synthetic sample data. **Wired to Member 1's real published output 2026-09-07**: their actual per-frame JSON diverges from the schema documented above (`class_name` not `class`, `timestamp_ms` int not `timestamp` ISO string, `pose.landmarks` not `keypoints`, `track_id: -1` for untracked detections) — bridged via `behaviour-risk/behaviour_risk_engine/cv_pipeline_adapter.py`, see its docstring for the full mapping and rationale. First run against the 2 generic files already in `cv-pipeline/outputs/` produced 0 events, correctly (neither contains a real product incident). **Then ran Member 1's actual pipeline on 2 real Drive demo clips** ("Rolling and dragging on wet floor", "Rolling and dropping carton") — this surfaced and fixed a real bug: a naive 2-3 frame velocity window crossed threshold on pure bbox jitter from the real (noisy, prototype) detector, producing 21 false-positive events from one 6-second clip. Fixed in `pushed_or_thrown.py`/`rough_handling.py` (wider averaging window + consecutive-frame requirement + a contact-cooldown so a real jolt doesn't get double-counted after release) — now 3-4 clean events per clip, synthetic suite still green. `rolling` still didn't fire on either "rolling" clip — the one `carton` detection in both is a suspiciously huge box (~660×486px), likely a Member 1 detection-quality issue worth a look, not something tunable on this side. **Real trained model (`best.pt`) only detects person/box/forklift** — `pallet_incorrect_position`, `strap_misuse`, and `wrong_orientation` cannot fire against it until Member 1 retrains with a richer class set. **Next validation step needs Member 1**: run the pipeline on the remaining Drive clips, and retrain with pallet/trolley/strap/cupboard/mattress in scope. (Member 2)
 - [ ] `/backend-assistant` event store + assistant answering doc's example queries (Member 3)
 - [ ] `/dashboard` reading real events end-to-end (Member 4)
 

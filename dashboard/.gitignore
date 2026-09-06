@@ -1,0 +1,9 @@
+# generated sample-data artifacts (recreate with: python test_data/generate_test_data.py)
+test_data/demo_session.mp4
+test_data/demo_session_detections.json
+test_data/events.db
+test_data/manifest.json
+test_data/evidence/
+
+__pycache__/
+*.pyc

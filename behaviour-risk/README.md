@@ -156,6 +156,56 @@ exposed a real robustness bug:
   stacking) for broader validation, and ideally retrain with a broader
   labeled dataset so the 3 dead behaviours above have a chance to fire.
 
+**Third pass (2026-09-07) — ran the remaining 5 Drive clips** ("Dock
+level, dragging cupboard", "KD packets dragged, heavy box kept on other
+packets", "Stepping on cartons, vertical product kept horizontally, heavy
+product kept on top", "Throwing Mattresses", "Throwing seating cartons,
+using strap to hold" — all 7 clips now covered). Results, after the fixes
+above:
+
+| Clip | Events | Notable |
+| --- | --- | --- |
+| Dock level, dragging cupboard (31s) | 8 | `dropped`, `stepping_on_product`, 3x `pushed_or_thrown`, 2x `no_required_equipment` |
+| KD packets dragged, heavy box... (34s) | 4 | 4x `pushed_or_thrown` on 4 different tracks |
+| Stepping on cartons... (49s) | 1 | 1x `pushed_or_thrown` |
+| Throwing Mattresses (42s) | 1 | 1x `pushed_or_thrown`, at 00:00:39 — plausible timing for a single throw near the end |
+| Throwing seating cartons, strap (15s) | 8 | 2x `stepping_on_product`, 6x `pushed_or_thrown` across 56 (!) distinct carton track_ids |
+
+`throwing_mattresses` is the cleanest validation so far — one event,
+sensibly timed. But `dragged` still never fired on either clip literally
+named for dragging, which led to the real finding of this pass:
+
+- **Root cause isn't thresholds, it's track identity fragmentation.**
+  Instrumented `dragged.py` directly against `kd_packets_dragged_heavy_box`:
+  every time person-carton contact was detected, it was under a **brand
+  new track_id** (117 → 106 → 185 → 199 → 219 → 240 → 272...) — ByteTrack
+  loses the object and reassigns a fresh id almost every time, because
+  detections are too sparse to bridge the gaps (confirmed separately: one
+  carton track had a 29-frame gap mid-track; `throwing_seating_strap`
+  produced **56 distinct carton track_ids in just 451 frames**). Every
+  behaviour here is keyed by track_id, so a duration/distance requirement
+  can never accumulate across an identity change — `dragged` needs 0.4s +
+  60px on one id and never got close (elapsed capped at ~0.33s, distance
+  under 20px, in every fragment). This is a tracking-quality issue on
+  Member 1's side (ByteTrack losing tracks, or the detector's confidence
+  being too unstable for it to hold one), not a tunable parameter here.
+- Added a grace period to `dragged.py` anyway (ages out an episode based
+  on frames since last *confirmed* contact, tolerating momentary gaps on
+  an otherwise-continuous track) — correct and worth keeping, but it
+  didn't fix this specific clip because the gap here isn't momentary, it's
+  a full identity change. A real fix needs either better tracking
+  continuity upstream, or a track re-identification layer (matching a new
+  id to a just-lost one by proximity/class/timing) — a real feature, not
+  a quick patch, and one with its own false-merge risks; flagging it as a
+  team decision rather than building it under time pressure.
+- This also explains the earlier pattern: **shorter-threshold behaviours
+  survive fragmentation, longer ones don't.** `stepping_on_product` (0.3s)
+  and the jerk/throw rules (2 consecutive frames) fired across real clips;
+  `dragged`, `incorrect_stacking`/`unstable_stacking`, `pallet_incorrect_position`,
+  and `unsafe_loading_sequence` (all 0.4-1.0s+ sustained) never did, across
+  any of the 7 clips. Worth keeping in mind when tuning further: thresholds
+  aren't the only lever, track continuity upstream matters just as much.
+
 **Flagged to Member 4**: `dashboard/data_access.py`'s `load_detections()`
 is written against the same documented-but-not-real schema (its own
 docstring says so) — it'll hit the identical mismatch once it loads

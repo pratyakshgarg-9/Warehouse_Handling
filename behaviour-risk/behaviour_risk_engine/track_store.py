@@ -17,6 +17,7 @@ from typing import Deque, Dict, List, Optional
 from .models import DetectedObject
 
 DEFAULT_HISTORY_LEN = 60  # ~2s at 30fps — the longest lookback any detector uses is no_required_equipment's 45-frame carry window
+MAX_STEP_GAP_S = 0.2      # ~6 frames at 30fps — see _contiguous_tail
 
 
 @dataclass
@@ -59,13 +60,39 @@ class TrackStore:
             return 0.0
         return (h[-1].timestamp - h[0].timestamp).total_seconds()
 
+    def _contiguous_tail(self, snapshots: List[TrackSnapshot]) -> List[TrackSnapshot]:
+        """The trailing run of snapshots with no unusually large gap between
+        consecutive entries. Velocity/speed math needs this: TrackStitcher
+        (engine.py) remaps a real detector's fragmented track_ids onto one
+        canonical id, so two adjacent stored snapshots can span a real gap
+        of many missed frames — dividing that positional jump by the
+        (correctly large) elapsed time gives a number that looks like a
+        velocity reading but isn't actually measuring a sudden motion, just
+        unknown drift over an unknown span. Excluding any step wider than
+        MAX_STEP_GAP_S keeps genuine sudden-motion detection intact while
+        refusing to manufacture a jolt out of a stitched-together gap.
+        horizontal_displacement deliberately does NOT use this — bridging
+        that same gap for cumulative distance is the whole point of
+        stitching a fragmented track back together."""
+        if len(snapshots) < 2:
+            return snapshots
+        cut = 0
+        for i in range(len(snapshots) - 1, 0, -1):
+            gap = (snapshots[i].timestamp - snapshots[i - 1].timestamp).total_seconds()
+            if gap > MAX_STEP_GAP_S:
+                cut = i
+                break
+        return snapshots[cut:]
+
     def vertical_velocity(self, track_id: int, window: int = 5) -> float:
         """Pixels/sec of the bbox bottom edge over the last `window` snapshots.
         Positive = moving down (falling toward the floor in image coordinates)."""
         h = self.history(track_id)
         if len(h) < 2:
             return 0.0
-        recent = list(h)[-window:]
+        recent = self._contiguous_tail(list(h)[-window:])
+        if len(recent) < 2:
+            return 0.0
         dt = (recent[-1].timestamp - recent[0].timestamp).total_seconds()
         if dt <= 0:
             return 0.0
@@ -90,7 +117,9 @@ class TrackStore:
         h = self.history(track_id)
         if len(h) < 2:
             return 0.0
-        recent = list(h)[-window:]
+        recent = self._contiguous_tail(list(h)[-window:])
+        if len(recent) < 2:
+            return 0.0
         dt = (recent[-1].timestamp - recent[0].timestamp).total_seconds()
         if dt <= 0:
             return 0.0
@@ -105,7 +134,9 @@ class TrackStore:
         h = self.history(track_id)
         if len(h) < 2:
             return 0.0
-        recent = list(h)[-window:]
+        recent = self._contiguous_tail(list(h)[-window:])
+        if len(recent) < 2:
+            return 0.0
         dt = (recent[-1].timestamp - recent[0].timestamp).total_seconds()
         if dt <= 0:
             return 0.0

@@ -59,6 +59,7 @@ behaviour_risk_engine/
   constants.py        class-name sets (person/carton/mattress/cupboard/pallet/trolley/strap)
   geometry.py         bbox helpers (overlap, resting-on, overhang, bottom_strip)
   track_store.py       rolling per-track history (velocity, displacement, duration)
+  track_stitcher.py    re-identifies a real detector's fragmented track_ids as one canonical id
   pair_debounce.py     shared "hold for N seconds, fire once" helper used by several detectors
   behaviours/          one BehaviourDetector per behaviour_type (14 files)
   risk_scoring.py      the spec's risk_score formula + Low/Medium/High/Critical buckets
@@ -206,11 +207,107 @@ named for dragging, which led to the real finding of this pass:
   any of the 7 clips. Worth keeping in mind when tuning further: thresholds
   aren't the only lever, track continuity upstream matters just as much.
 
+**Fourth pass (2026-09-07) — built the track re-identification layer
+flagged above**, since it's squarely within this module's scope (unlike
+retraining Member 1's model). `track_stitcher.py`'s `TrackStitcher` remaps
+a newly-appeared track_id onto a recently-lost one of the same class,
+close by (conservative match: small gap, small displacement) — `engine.py`
+runs every frame's objects through it before anything else sees them, so
+detectors only ever see the stitched (canonical) id. Two real bugs
+surfaced and got fixed along the way, both confirmed by direct
+instrumentation against `kd_packets_dragged_heavy_box` before being
+called fixed:
+
+- **Intra-frame collision**: this clip genuinely has multiple boxes in
+  frame ("heavy box kept on other packets"), and the first version of the
+  stitcher let two *different*, simultaneously-present raw track_ids both
+  match onto the same canonical id in the same frame — merging two real,
+  different objects into one and corrupting its position history with an
+  alternating jump every frame (directly observed: two very different
+  bboxes recorded at the identical timestamp). Fixed by reserving a
+  canonical id the instant any raw id claims it each frame, so a second
+  raw id that frame can't also match it.
+- **Velocity smearing across a stitched gap**: once two fragments are
+  correctly stitched into one canonical track, the position jump between
+  "last seen before the gap" and "first seen after" still isn't a real
+  velocity reading — we don't know what happened during the gap, and
+  dividing a real positional difference by the (correctly large) elapsed
+  time can still look like a jolt. This was re-triggering the same
+  jitter-storm pattern from the second pass, now across a stitched track
+  (7 `pushed_or_thrown` firings on one id in 3 seconds). Fixed in
+  `track_store.py`: `speed`/`horizontal_speed`/`vertical_velocity` now
+  exclude any step wider than `MAX_STEP_GAP_S` (0.2s) from their window,
+  so velocity math never spans a stitched-together gap.
+  `horizontal_displacement` deliberately keeps bridging gaps — that's the
+  point for distance/duration-based rules like `dragged`.
+
+Net effect after both fixes: `kd_packets_dragged_heavy_box` settled at 5
+events (down from a 13-event storm mid-fix, and the original 4 pre-
+stitching), `throwing_seating_strap` at 13 spread across the full 15s
+clip rather than clustered — plausible for a clip literally titled
+"cartons" (plural). Full synthetic suite (14 scenarios) passes unchanged
+throughout. **`dragged` still doesn't fire on either dragging clip even
+with stitching** — canonical track count did drop (e.g. 28 distinct
+canonical carton ids vs. more raw ones), but not enough to cross
+`MIN_DRAG_DURATION_S`/`MIN_DRAG_DISTANCE_PX` on this specific footage.
+One untested hypothesis: `dragged` only measures *horizontal* displacement
+(`horizontal_displacement`), but a real drag on this camera angle might
+not be purely left-right — worth checking against the annotated video
+rather than guessing further from data alone.
+
 **Flagged to Member 4**: `dashboard/data_access.py`'s `load_detections()`
 is written against the same documented-but-not-real schema (its own
 docstring says so) — it'll hit the identical mismatch once it loads
 Member 1's actual output. Worth reusing this adapter's mapping rather than
 writing a second, possibly-inconsistent translation.
+
+**Fifth pass (2026-09-09, deadline day) — Member 1's pipeline broke, then
+got fixed, and the final model decision got made.** He committed a
+retrained model merging the LOCO dataset (see the root CLAUDE.md's enum
+changelog — that dataset search was for this) with his original one,
+adding `trolley`/`robot`/`white_roll`/`small_load_carrier`/`stillage` to
+the class list. Two problems surfaced:
+
+- **The committed `cv_pipeline.py` was no longer usable by anyone else.**
+  Hardcoded `/content/Member1_CV/...` Colab paths, `argparse` running at
+  import time (so even `import cv_pipeline` would fail), and the schema
+  drifted yet again. Fixed: restored to an importable `run_cv()` with
+  repo-relative paths — `cv_pipeline_adapter.py` only needed one field
+  rename (`class_name`→`class`) since the fixed schema is now close to
+  what this module already expects.
+- **The retrained model isn't usable.** Only 5 of the suggested 50 epochs
+  were possible (Colab free-tier compute ran out, no more available
+  before the deadline). Verified directly rather than trusting the
+  README's claims: ran it against two real clips myself — every class,
+  including `person`/`box` which the *old* model already handled well,
+  clustered at ~0.20-0.29 confidence (the inference floor), and one clip
+  produced zero detections of anything. That's not "the new classes need
+  more data," it's under-trained across the board — training likely
+  started fresh from `yolo11n.pt` instead of continuing from the
+  already-working checkpoint.
+- **Decision**: reverted the pipeline's active default to `best.pt`
+  (recovered from git history — it had been deleted). Confirmed it's
+  still solid: box up to 0.96 confidence, person up to 0.77, and it turns
+  out `best.pt` already had a `pallet` class that real footage lights up
+  at modest-but-real confidence (~0.27-0.40) — this was never seen in
+  earlier testing simply because the clips tested back then didn't have
+  a pallet in frame. `pallet_incorrect_position` is viable after all.
+- **Net scope for tomorrow's submission: 11 of 14 behaviours are viable**
+  (the model has the classes each one needs) — but re-ran all 7 real
+  clips against the fixed pipeline+model and only **5 have actually fired
+  on real footage so far**: `dropped`, `no_required_equipment`,
+  `pushed_or_thrown`, `rough_handling`, `stepping_on_product`. The other 6
+  viable-but-unobserved ones (`dragged`, `incorrect_stacking`,
+  `unstable_stacking`, `outside_designated_area`, `pallet_incorrect_position`,
+  `unsafe_loading_sequence`, `rolling`) are implemented and pass their
+  synthetic scenario, but these 7 specific clips just don't happen to
+  contain matching real incidents for most of them, and `dragged` has the
+  known fragmentation issue. **For the demo, lean on the 5 confirmed
+  ones** — showing a behaviour that's coded but never verified against
+  real footage would undercut the doc's own "never overclaim" requirement.
+  Dead regardless of footage: `strap_misuse`, `wrong_orientation` (need
+  classes in neither model). Full comparison table in
+  `shared/cv_pipeline_schema.md`.
 
 ## Integration points (things that will need to change later)
 

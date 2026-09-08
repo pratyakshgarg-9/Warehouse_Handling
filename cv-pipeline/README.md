@@ -51,13 +51,39 @@ Final classes:
 
 A YOLO11n model was trained from `yolo11n.pt` using the merged dataset.
 
-For the prototype, training was limited to **5 epochs** to avoid system crashes.
+For the prototype, training was limited to **5 epochs** (suggested target
+was 50) because the team's Colab free-tier compute ran out before more
+was possible.
 
 The trained model is stored at:
 
 ```text
-Member1_CV/models/warehouse_merged_5ep_best.pt
+cv-pipeline/models/warehouse_merged_5ep_best.pt
 ```
+
+**⚠ Updated 2026-09-09: this model is not the one the pipeline actually
+uses.** Real testing against demo footage showed detection confidence for
+every class — including `person` and `box`, which the older model already
+handled well — clustering at ~0.20-0.29, right at the inference threshold
+(effectively noise). One test clip produced zero detections at all. This
+isn't just "the new classes are undertrained" — it looks like training
+started fresh from `yolo11n.pt` rather than continuing from the existing
+working checkpoint, so 5 epochs wasn't enough to relearn `person`/`box`
+either, let alone the new classes.
+
+With no compute time left before the deadline, the pipeline's active
+default reverted to the original `models/best.pt` (`box`, `forklift`,
+`pallet`, `person` — confirmed working, real confidence spread up to
+0.95+). `warehouse_merged_5ep_best.pt` is kept in the repo for future
+work — pass `model_path=` to `run_cv()` to try it. See
+`shared/cv_pipeline_schema.md` for the full comparison and what it means
+for which behaviours the prototype can demonstrate (11 of 14).
+
+**If more Colab compute becomes available before the deadline**: continue
+training *from* `best.pt` rather than from `yolo11n.pt` — fine-tuning an
+already-working checkpoint converges much faster than starting over, so
+even 10-15 more epochs from that base could beat 5 epochs from scratch by
+a wide margin.
 
 ## ByteTrack
 
@@ -112,45 +138,43 @@ The pipeline:
 
 ## Running the Pipeline
 
-### JSON only
+**Updated 2026-09-09**: fixed back to an importable function with paths
+relative to the repo (the version briefly committed alongside the merged
+model hardcoded Colab's `/content/...` paths and only ran as a CLI script
+— broke every other module's integration with it). Both ways of running
+it now call the same code, from anywhere the repo is checked out:
+
+### As a function (what Member 2/3/4 should use)
+
+```python
+from pipeline.cv_pipeline import run_cv
+run_cv("path/to/clip.mp4")                                  # -> cv-pipeline/outputs/<clip>_cv.json
+run_cv("path/to/clip.mp4", model_path="models/warehouse_merged_5ep_best.pt")  # try the other model
+```
+
+### As a CLI (Colab-style)
 
 ```bash
-python /content/Member1_CV/pipeline/cv_pipeline.py --video /content/Videos/parcels_rack_test.mp4
+python pipeline/cv_pipeline.py --video path/to/clip.mp4
+python pipeline/cv_pipeline.py --video path/to/clip.mp4 --show   # also writes an annotated MP4
+python pipeline/cv_pipeline.py --video path/to/clip.mp4 --model models/warehouse_merged_5ep_best.pt
 ```
 
-Output:
-
-```text
-Member1_CV/outputs/output.json
-```
-
-### JSON + annotated video
-
-```bash
-python /content/Member1_CV/pipeline/cv_pipeline.py --video /content/Videos/parcels_rack_test.mp4 --show
-```
-
-Outputs:
-
-```text
-Member1_CV/outputs/output.json
-Member1_CV/outputs/output.mp4
-```
-
-The JSON is **always generated**, while `--show` enables creation of the annotated MP4.
+Output JSON always goes to `cv-pipeline/outputs/<video_name>_cv.json`
+unless `--output`/`output_json=` overrides it.
 
 ## Output Format
 
-Example:
-
 ```json
 {
-  "frame": 0,
+  "frame_id": 0,
+  "timestamp_ms": 0,
   "objects": [
     {
       "track_id": 1,
       "class": "person",
       "bbox": [100, 150, 300, 500],
+      "confidence": 0.87,
       "pose": [
         {
           "x": 0.42,
@@ -169,7 +193,12 @@ This provides Member 2 with:
 * **What** is present → `class`
 * **Where** it is → `bbox`
 * **Which object** it is across frames → `track_id`
-* **Human posture information** → `pose`
+* **How confident the detection is** → `confidence`
+* **When in the video** → `frame_id` / `timestamp_ms`
+* **Human posture information** → `pose` (person only)
+
+See `shared/cv_pipeline_schema.md` for the full contract (this is the
+canonical version — keep both in sync if this changes again).
 
 ## Project Structure
 

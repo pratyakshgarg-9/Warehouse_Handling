@@ -32,6 +32,7 @@ from .behaviours.unstable_stacking import UnstableStackingDetector
 from .behaviours.wrong_orientation import WrongOrientationDetector
 from .event_sink import default_event_sink
 from .models import DetectedObject, Event, RawDetection
+from .track_stitcher import TrackStitcher
 from .track_store import TrackStore
 
 REPEAT_WINDOW_S = 300.0  # 5 minutes — how far back "repeat frequency" looks
@@ -62,6 +63,7 @@ class BehaviourEngine:
     ) -> None:
         self.bay = bay
         self.store = TrackStore()
+        self.stitcher = TrackStitcher()
         self.detectors: List[BehaviourDetector] = detectors or [
             DroppedDetector(),
             DraggedDetector(),
@@ -86,6 +88,7 @@ class BehaviourEngine:
         frame_id = frame["frame_id"]
         timestamp = _parse_timestamp(frame["timestamp"])
         objects = [DetectedObject.from_dict(o) for o in frame["objects"]]
+        self.stitcher.stitch(frame_id, objects)  # remap fragmented real track_ids onto one canonical id
         self.store.update(frame_id, timestamp, objects)
 
         events: List[Event] = []

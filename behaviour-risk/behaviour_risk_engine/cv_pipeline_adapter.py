@@ -1,49 +1,51 @@
 """
-Translates Member 1's ACTUAL cv-pipeline per-frame output (documented in
-cv-pipeline/README.md §7, confirmed against the real files in
-cv-pipeline/outputs/*.json) into the frame shape BehaviourEngine.process_frame
-expects (documented in the root CLAUDE.md).
+Translates Member 1's cv-pipeline per-frame output (cv_pipeline.py,
+confirmed against real files in cv-pipeline/outputs/*.json) into the frame
+shape BehaviourEngine.process_frame expects (documented in the root
+CLAUDE.md and shared/cv_pipeline_schema.md).
 
-The two shapes diverge in ways the root CLAUDE.md didn't anticipate — this
-module is the one place that bridges the gap, so nothing else in
-behaviour_risk_engine needs to know about it:
+Updated 2026-09-09 when cv_pipeline.py was fixed (it had drifted to a
+Colab-only script with a different, incompatible output shape — see that
+file's docstring and the root CLAUDE.md status line for the full story).
+The two shapes are close now, but this adapter is kept rather than
+inlining a passthrough, since the remaining differences are exactly the
+kind that tend to silently reappear:
 
-  - "class_name" instead of "class".
-  - "timestamp_ms" (int, frame-relative — computed as
-    int((frame_id / fps) * 1000), confirmed in cv_pipeline.py) instead of
-    "timestamp" (ISO 8601 UTC string). There's no wall-clock reference in
-    Member 1's output at all — it's a recorded-video batch pipeline, not a
-    live feed. Converted here using the same "video_start_utc" convention
-    Member 4's dashboard/config.py already uses (DASHBOARD_VIDEO_START_UTC)
+  - "timestamp_ms" (int, frame-relative — int((frame_id / fps) * 1000))
+    instead of "timestamp" (ISO 8601 UTC string). There's no wall-clock
+    reference in Member 1's output — it's a recorded-video batch pipeline,
+    not a live feed. Converted here using the same "video_start_utc"
+    convention Member 4's dashboard/config.py uses (DASHBOARD_VIDEO_START_UTC)
     for the identical problem, so both modules interpret a video's events
     against the same wall-clock reference rather than inventing two
     incompatible ones. Pass it in; if omitted, an arbitrary fixed reference
     is used and event timestamps will NOT reflect real time of day.
-  - "pose": {"landmarks": [...]} instead of "keypoints": [[x, y, conf], ...].
-    Not translated 1:1 — always emitted as None. Nothing in this module
-    uses keypoints yet (stepping_on_product uses a bbox-based foot
-    approximation instead), and MediaPipe's landmark index layout vs. this
-    module's assumed [[x,y,conf], ...] shape hasn't been reconciled. Revisit
-    if a future behaviour needs real pose data.
-  - track_id == -1 means "ByteTrack couldn't assign a persistent id this
-    frame" (cv-pipeline/README.md §5). Every behaviour detector here
-    depends on track_id identity being stable across frames, so treating
-    all -1 detections as one shared fake track would silently corrupt
-    velocity/duration math for unrelated objects. Dropped instead.
-  - Low-confidence noise: the real model is a prototype (README §4/§12 —
-    "some objects were detected with relatively low confidence"). A
-    MIN_CONFIDENCE floor filters those out before they reach any detector.
+  - "pose" is now a flat list of {x,y,z,visibility} dicts (person only),
+    not "keypoints": [[x, y, conf], ...]. Not translated 1:1 — always
+    emitted as None. Nothing in this module uses keypoints yet
+    (stepping_on_product uses a bbox-based foot approximation instead).
+    Revisit if a future behaviour needs real pose data.
+  - track_id == -1 means ByteTrack couldn't assign a persistent id this
+    frame. Every behaviour detector here depends on track_id identity
+    being stable across frames, so treating all -1 detections as one
+    shared fake track would silently corrupt velocity/duration math for
+    unrelated objects. Dropped instead.
+  - Low-confidence noise: a MIN_CONFIDENCE floor filters weak detections
+    before they reach any detector.
 
-Known model-vocabulary gap (not something this adapter can fix): the
-actual trained model (cv-pipeline/models/best.pt) only detects "person",
-"box", and "forklift" — confirmed by inspecting cv-pipeline/outputs/*.json.
-It was never trained on pallet, trolley, strap, cupboard, or mattress.
-Practically, that means pallet_incorrect_position, strap_misuse, and
-wrong_orientation cannot produce any events against this model's current
-output — every class they depend on is simply never detected. This is a
-prototype-model limitation Member 1's own README already calls out
-("Improving cardboard box detection", "larger and more diverse warehouse
-dataset"), not a bug in this adapter or in those detectors.
+Model-vocabulary gap (not something this adapter can fix): the ACTIVE
+model (cv-pipeline/models/best.pt) detects person/box/forklift/pallet.
+A second model exists at cv-pipeline/models/warehouse_merged_5ep_best.pt
+with 9 classes (adds trolley, robot, white_roll, small_load_carrier,
+stillage) from a merged dataset, but it's not the active default — only
+5 epochs of training were possible before the team's Colab compute ran
+out, and real-clip testing showed every class (including person/box,
+which best.pt already handles well) clustering at ~0.20-0.29 confidence,
+right at the noise floor. Concretely: pallet_incorrect_position (needs
+"pallet" — actually available!), strap_misuse, and wrong_orientation
+(need "strap"/"cupboard"/"mattress" — not in EITHER model) still can't
+produce reliable events. Swap `model_path` in cv_pipeline.run_cv() to try
+the merged model once it's had more training.
 """
 
 from __future__ import annotations
@@ -79,7 +81,7 @@ def adapt_frame(raw_frame: dict, video_start_utc: Optional[datetime] = None) -> 
             continue
         objects.append({
             "track_id": raw_obj["track_id"],
-            "class": _resolve_class(raw_obj["class_name"]),
+            "class": _resolve_class(raw_obj["class"]),
             "bbox": raw_obj["bbox"],
             "confidence": raw_obj.get("confidence", 0.0),
             "keypoints": None,

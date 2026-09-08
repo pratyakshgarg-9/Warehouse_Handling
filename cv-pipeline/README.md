@@ -1,250 +1,218 @@
-# Computer Vision Pipeline
+# Member 1 — Computer Vision Pipeline
 
-## 1. Purpose
+## Overview
 
-The `cv-pipeline` module is responsible for converting raw warehouse video into structured information that can be used by the Behaviour Risk module.
+Member 1 is responsible for converting warehouse video into structured computer-vision data for the rest of the project.
 
-The pipeline answers three basic questions:
+**Pipeline:**
 
-1. What objects are present in the video?
-2. Where are those objects and how do they move?
-3. What is the posture of a detected person?
+```text
+Warehouse Video
+      ↓
+YOLO11 Object Detection
+      ↓
+ByteTrack Object Tracking
+      ↓
+MediaPipe Pose Detection
+      ↓
+Per-frame JSON
+      ↓
+Member 2
+```
 
-The pipeline uses YOLO11 for object detection, ByteTrack for object tracking, and MediaPipe Pose for human pose estimation.
+## Dataset
 
-## 2. Pipeline
+Two Roboflow datasets were downloaded separately:
 
-The processing flow is:
+* **LOCO Warehouse Dataset**
+* **Warehouse Dataset**
 
-Warehouse Video → YOLO11 Object Detection → ByteTrack Tracking → MediaPipe Pose Estimation → Per-frame JSON Output → Behaviour Risk Module
+They were kept separate initially and then merged into a new dataset called `Combined_Warehouse`.
 
-YOLO11 identifies objects in each frame. ByteTrack assigns tracking IDs so the same detected object can be followed across multiple frames. MediaPipe Pose is applied to detected people to obtain pose landmarks. The final information is stored as structured JSON.
+The original datasets were not modified.
 
-## 3. Project Structure
+Final classes:
 
-The `cv-pipeline` folder contains the following:
+```text
+0 = box
+1 = trolley
+2 = forklift
+3 = pallet
+4 = person
+5 = robot
+6 = white_roll
+7 = small_load_carrier
+8 = stillage
+```
 
-models/best.pt
-- Fine-tuned YOLO11 model used for object detection.
+`pallet_truck` and `cart` were mapped to `trolley`, while `pallets` was mapped to `pallet`.
 
-pose/pose_landmarker.task
-- MediaPipe Pose Landmarker model used for human pose estimation.
+## Model Training
 
-pipeline/cv_pipeline.py
-- Main Python implementation of the computer vision pipeline.
+A YOLO11n model was trained from `yolo11n.pt` using the merged dataset.
 
-outputs/cv_output.json
-- Generated CV output data from testing.
+For the prototype, training was limited to **5 epochs** to avoid system crashes.
 
-outputs/warehouse_scanning_test_cv.json
-- CV output generated from the warehouse scanning test video.
+The trained model is stored at:
 
-README.md
-- Documentation for the CV pipeline.
+```text
+Member1_CV/models/warehouse_merged_5ep_best.pt
+```
 
-The test videos are kept separately because of their large file sizes and are not included in the Git repository.
+## ByteTrack
 
-## 4. Object Detection
+ByteTrack was integrated with YOLO to maintain consistent `track_id` values between video frames.
 
-The pipeline uses a fine-tuned YOLO11 model stored at:
+Each detected object contains:
 
-models/best.pt
-
-The model detects the object classes available in the prototype training dataset.
-
-The current model is a prototype model, so detection performance is not expected to be perfect. During testing, some objects were detected with relatively low confidence or were missed completely. The model can be improved later by training with a larger and more representative warehouse dataset.
-
-The detection model can be replaced in the future without redesigning the rest of the pipeline. The new model can simply be placed at the expected model path.
-
-## 5. Object Tracking
-
-ByteTrack is used to track detected objects across consecutive video frames.
-
-Each tracked object can receive a `track_id`. For example, if the same forklift is detected across several frames, ByteTrack can maintain the same ID:
-
-Frame 10 → forklift → track_id 2
-Frame 11 → forklift → track_id 2
-Frame 12 → forklift → track_id 2
-
-This is important for the Behaviour Risk module because it allows the system to analyze movement over time instead of treating every detection as a new object.
-
-A `track_id` of `-1` means that ByteTrack did not assign a persistent tracking ID to that detection.
-
-## 6. Human Pose Estimation
-
-MediaPipe Pose is applied to detected person regions.
-
-The pose model is stored at:
-
-pose/pose_landmarker.task
-
-For a person detection, the pipeline attempts to generate pose landmarks. For non-person objects, the pose value is set to `null`.
-
-The pose landmarks are currently generated from the detected person's cropped image. Therefore, their coordinates are relative to the person crop unless they are converted back to full-frame coordinates.
-
-## 7. Per-frame JSON Output
-
-The pipeline produces structured information for every processed frame.
-
-A simplified example is:
-
+```json
 {
-  "frame_id": 1,
-  "timestamp_ms": 40,
+  "track_id": 1,
+  "class": "person",
+  "bbox": [x1, y1, x2, y2]
+}
+```
+
+ByteTrack was tested successfully on warehouse footage.
+
+## MediaPipe Pose
+
+MediaPipe Pose Landmarker was added to detect human pose.
+
+Pose detection is performed **only for objects classified as `person`**.
+
+Each person can contain 33 pose landmarks with:
+
+```text
+x
+y
+z
+visibility
+```
+
+The MediaPipe Tasks API with `IMAGE` mode was used because the available environment had compatibility issues with the older `mp.solutions` API and `VIDEO` mode.
+
+## Final Pipeline
+
+The main script is:
+
+```text
+Member1_CV/pipeline/cv_pipeline.py
+```
+
+The pipeline:
+
+1. Opens the input video.
+2. Runs YOLO11 detection.
+3. Uses ByteTrack for tracking.
+4. Extracts bounding boxes and track IDs.
+5. Runs MediaPipe Pose on detected people.
+6. Stores all frame information in JSON.
+7. Optionally creates an annotated MP4.
+
+## Running the Pipeline
+
+### JSON only
+
+```bash
+python /content/Member1_CV/pipeline/cv_pipeline.py --video /content/Videos/parcels_rack_test.mp4
+```
+
+Output:
+
+```text
+Member1_CV/outputs/output.json
+```
+
+### JSON + annotated video
+
+```bash
+python /content/Member1_CV/pipeline/cv_pipeline.py --video /content/Videos/parcels_rack_test.mp4 --show
+```
+
+Outputs:
+
+```text
+Member1_CV/outputs/output.json
+Member1_CV/outputs/output.mp4
+```
+
+The JSON is **always generated**, while `--show` enables creation of the annotated MP4.
+
+## Output Format
+
+Example:
+
+```json
+{
+  "frame": 0,
   "objects": [
     {
-      "track_id": 2,
-      "class_id": 6,
-      "class_name": "person",
-      "confidence": 0.31,
-      "bbox": [120, 80, 300, 520],
-      "pose": {
-        "landmarks": []
-      }
+      "track_id": 1,
+      "class": "person",
+      "bbox": [100, 150, 300, 500],
+      "pose": [
+        {
+          "x": 0.42,
+          "y": 0.31,
+          "z": -0.12,
+          "visibility": 0.98
+        }
+      ]
     }
   ]
 }
+```
 
-The fields have the following meaning:
+This provides Member 2 with:
 
-`frame_id`
-The frame number in the video.
+* **What** is present → `class`
+* **Where** it is → `bbox`
+* **Which object** it is across frames → `track_id`
+* **Human posture information** → `pose`
 
-`timestamp_ms`
-The timestamp of the frame in milliseconds.
+## Project Structure
 
-`objects`
-The list of objects detected in that frame.
+```text
+/content/
+├── Dataset/
+│   ├── Combined_Warehouse/
+│   ├── LOCO/
+│   └── Warehouse/
+│
+├── Videos/
+│   ├── parcels_rack_test.mp4
+│   ├── warehouse_shelves_test.mp4
+│   └── warehouse_test.mp4
+│
+└── Member1_CV/
+    ├── models/
+    │   └── warehouse_merged_5ep_best.pt
+    │
+    ├── pose/
+    │   └── pose_landmarker.task
+    │
+    ├── pipeline/
+    │   └── cv_pipeline.py
+    │
+    └── outputs/
+        ├── output.json
+        └── output.mp4
+```
 
-`track_id`
-The ID assigned by ByteTrack to follow an object across frames.
+## Current Status
 
-`class_id`
-The numerical class ID assigned by YOLO.
+**Completed:**
 
-`class_name`
-The name of the detected object class.
+* Dataset collection
+* Dataset merging
+* Class mapping
+* YOLO11 training
+* Object detection testing
+* ByteTrack integration
+* MediaPipe Pose integration
+* Combined pipeline
+* JSON output
+* Optional annotated MP4 output
 
-`confidence`
-The confidence score produced by YOLO for the detection.
-
-`bbox`
-The bounding box of the detected object in the format `[x1, y1, x2, y2]`.
-
-`pose`
-MediaPipe pose information for a detected person. This is `null` for non-person objects.
-
-## 8. Main Pipeline File
-
-The main implementation is:
-
-pipeline/cv_pipeline.py
-
-The main function is:
-
-run_cv(video_path)
-
-The function takes a video path as input and processes the video frame by frame.
-
-For each frame, it performs object detection, object tracking, and pose estimation where applicable. It then stores the results in JSON and creates an annotated video showing the detections and tracking information.
-
-## 9. Running the Pipeline
-
-Required Python packages include:
-
-- ultralytics
-- mediapipe
-- opencv-python
-
-The pipeline can be imported using:
-
-from pipeline.cv_pipeline import run_cv
-
-Then run:
-
-run_cv("path/to/warehouse_scanning_test.mp4")
-
-The generated files are saved in the `outputs` folder.
-
-For example:
-
-outputs/warehouse_scanning_test_cv.json
-outputs/warehouse_scanning_test_annotated.mp4
-
-The JSON file contains the structured CV information. The annotated MP4 is used to visually verify the detections, tracking IDs, and pose estimation.
-
-## 10. Prototype Testing
-
-The pipeline was tested using:
-
-warehouse_scanning_test.mp4
-
-The test video contains 452 frames and runs at approximately 25 FPS.
-
-The complete pipeline successfully processed the video and generated the required JSON output and annotated video.
-
-During prototype testing, the model produced detections for objects such as forklift, box, and person. However, detections were relatively sparse. This is considered a limitation of the current prototype model rather than a failure of the CV pipeline itself.
-
-The current implementation therefore demonstrates the complete end-to-end CV workflow while leaving model accuracy improvements for later development.
-
-## 11. Behaviour Risk Integration
-
-The CV pipeline is the perception layer of the overall system.
-
-Its output is intended to be consumed by the Behaviour Risk module.
-
-The Behaviour Risk module can use the following information:
-
-- Object class
-- Object confidence
-- Bounding box
-- Track ID
-- Frame ID
-- Timestamp
-- Person pose landmarks
-
-This information can then be used to identify movement patterns and potential safety-related behaviours.
-
-The intended flow is:
-
-Video → CV Pipeline → Per-frame JSON → Behaviour Risk Analysis → Risk Events / Risk Scores
-
-## 12. Current Limitations
-
-This is a prototype implementation.
-
-The current limitations include:
-
-- Object detection accuracy depends on the quality and variety of the training data.
-- Some objects may have low confidence scores.
-- Some objects may not be detected in every frame.
-- Individual boxes may not always be detected correctly.
-- Short-lived or weak detections may not receive a persistent tracking ID.
-- Pose coordinates are currently based on the detected person crop.
-- Performance may vary depending on lighting, camera angle, object size, occlusion, and warehouse environment.
-
-These limitations can be addressed during future model training and system refinement.
-
-## 13. Future Improvements
-
-Possible improvements include:
-
-- Training with a larger and more diverse warehouse dataset.
-- Adding more representative warehouse footage to the training data.
-- Improving cardboard box detection.
-- Improving person and object detection accuracy.
-- Tuning YOLO confidence and ByteTrack parameters.
-- Improving tracking during object occlusion.
-- Improving pose estimation robustness.
-- Testing the pipeline on multiple full-length warehouse videos.
-- Optimizing inference speed for real-time or near-real-time processing.
-
-## 14. Member 1 Responsibility
-
-Member 1 is responsible for the Computer Vision Pipeline.
-
-The final responsibility is:
-
-Raw Warehouse Video → Object Detection → Object Tracking → Human Pose Estimation → Structured Per-frame JSON
-
-The resulting JSON acts as the interface between the Computer Vision module and the downstream Behaviour Risk module.
+The current system is a **5-epoch prototype** ready for integration and further testing with the team's sample warehouse videos.

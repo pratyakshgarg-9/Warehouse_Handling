@@ -1,3 +1,6 @@
-python-dotenv
-groq
-google-generativeai
+# Only needed for the live Groq/Gemini path in assistant.py — both are
+# used via their OpenAI-compatible endpoints through the same client, so
+# one package covers both providers. Offline mode (no API key set) needs
+# no third-party packages at all — store.py/tools.py/offline_router.py
+# are stdlib-only.
+openai>=1.30.0

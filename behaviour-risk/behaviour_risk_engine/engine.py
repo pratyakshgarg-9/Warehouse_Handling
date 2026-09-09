@@ -60,8 +60,19 @@ class BehaviourEngine:
         bay: str = "bay_1",
         detectors: Optional[List[BehaviourDetector]] = None,
         event_sink: Optional[Callable[[Event], None]] = None,
+        event_id_prefix: str = "evt",
     ) -> None:
+        """`event_id_prefix` matters once events reach a shared store: each
+        BehaviourEngine instance counts from 1 on its own, so two engines
+        (e.g. one per processed video in a batch) would both mint
+        "evt_00001" and collide against the store's UNIQUE constraint on
+        event_id — confirmed happening when seeding the real store from
+        multiple real clips (2026-09-09). Give each engine instance
+        processing a different video its own prefix (e.g. the video's
+        filename) so ids stay unique across the whole session without the
+        engine needing to know anything about the backend's id space."""
         self.bay = bay
+        self._event_id_prefix = event_id_prefix
         self.store = TrackStore()
         self.stitcher = TrackStitcher()
         self.detectors: List[BehaviourDetector] = detectors or [
@@ -101,7 +112,7 @@ class BehaviourEngine:
 
     def _build_event(self, raw: RawDetection) -> Event:
         self._event_counter += 1
-        event_id = f"evt_{self._event_counter:05d}"
+        event_id = f"{self._event_id_prefix}_{self._event_counter:05d}"
 
         repeat_count = self._count_recent(raw.behaviour_type, raw.timestamp)
         self._recent_events.append((raw.timestamp, raw.behaviour_type))

@@ -43,3 +43,6 @@ behaviour-risk/output/
 
 # --- Claude Code personal settings (per-person permission overrides, not shared with the team) ---
 .claude/settings.local.json
+
+# --- Demo/test videos (large, sourced from the challenge doc's Drive folder — not committed) ---
+shared/*.mp4

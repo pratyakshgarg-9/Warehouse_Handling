@@ -25,7 +25,19 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Optional
+
+# dashboard/assistant_client.py loads this file via importlib from a
+# different directory (dashboard/), which doesn't add this file's own
+# directory to sys.path the way running `python assistant.py` directly
+# would — so `import store`/`import tools` fail with "No module named
+# 'store'" unless this is here first. Confirmed happening 2026-09-09
+# when actually running the dashboard's Assistant page against this file.
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
 import store
 import tools

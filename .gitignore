@@ -40,3 +40,6 @@ datasets/
 
 # --- behaviour-risk local scratch output (standalone-run fallback log, not the real event store) ---
 behaviour-risk/output/
+
+# --- Claude Code personal settings (per-person permission overrides, not shared with the team) ---
+.claude/settings.local.json

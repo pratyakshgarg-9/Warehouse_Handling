@@ -48,10 +48,16 @@ if not media["video_exists"] or not media["detections_exist"]:
         "This page plays the session footage with AI-detected overlays drawn "
         "from Member 1's per-frame detections and flags event moments from the "
         "event store.\n\n"
-        "With the sample dataset, generate it via:\n"
-        "```\npython dashboard/test_data/generate_test_data.py\n```\n"
-        "For the real pipeline, point `DASHBOARD_VIDEO_PATH` and "
-        "`DASHBOARD_DETECTIONS_PATH` at Member 1's output.",
+        "Set `DASHBOARD_VIDEO_PATH` and `DASHBOARD_DETECTIONS_PATH` to a real "
+        "clip and its matching JSON before launching Streamlit, e.g.:\n"
+        "```\n"
+        '$env:DASHBOARD_VIDEO_PATH = "C:\\path\\to\\dock_level_dragging_cupboard.mp4"\n'
+        '$env:DASHBOARD_DETECTIONS_PATH = "cv-pipeline/outputs/dock_level_dragging_cupboard_cv.json"\n'
+        '$env:DASHBOARD_VIDEO_START_UTC = "2026-09-08T08:15:00Z"\n'
+        "streamlit run dashboard/app.py\n"
+        "```\n"
+        "See the team's \"Clone, Setup & Run Guide\" document for the full list "
+        "of clips and their matching start times.",
         icon="🎥",
     )
     st.stop()

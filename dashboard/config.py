@@ -44,6 +44,23 @@ TEST_DB_PATH = TEST_DATA_DIR / "events.db"
 TEST_EVIDENCE_DIR = TEST_DATA_DIR / "evidence"
 TEST_MANIFEST_PATH = TEST_DATA_DIR / "manifest.json"
 
+def _resolve_repo_path(value: str) -> str:
+    """A relative DASHBOARD_VIDEO_PATH / DASHBOARD_DETECTIONS_PATH is only
+    correct if Streamlit happens to be launched from the exact repo root —
+    launched from anywhere else (a subfolder, a different terminal tab), the
+    plain Path(value).exists() check below silently fails and the whole
+    Video Review page falls back to "no session video available" with
+    nothing else rendered (confirmed reproducing this on two machines,
+    2026-09-10). Resolve relative paths against REPO_ROOT instead of the
+    process cwd so the page works regardless of where it was launched from."""
+    if not value:
+        return value
+    p = Path(value)
+    if not p.is_absolute():
+        p = (REPO_ROOT / p).resolve()
+    return str(p)
+
+
 RISK_ORDER = ["Low", "Medium", "High", "Critical"]
 
 # Shift windows (UTC hours) used for shift summaries — matches a standard
@@ -133,14 +150,14 @@ def resolve_session_media() -> dict:
     if TEST_MANIFEST_PATH.exists():
         manifest = json.loads(TEST_MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    video_path = os.environ.get(
+    video_path = _resolve_repo_path(os.environ.get(
         "DASHBOARD_VIDEO_PATH", str(TEST_DATA_DIR / manifest.get("video", ""))
         if manifest.get("video") else ""
-    )
-    detections_path = os.environ.get(
+    ))
+    detections_path = _resolve_repo_path(os.environ.get(
         "DASHBOARD_DETECTIONS_PATH",
         str(TEST_DATA_DIR / "demo_session_detections.json"),
-    )
+    ))
     video_start_utc = os.environ.get(
         "DASHBOARD_VIDEO_START_UTC", manifest.get("video_start_utc", "")
     )
